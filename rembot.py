@@ -1,43 +1,29 @@
-import json
 
-import aiohttp
-import pendulum
-import requests
-from config import config, bot, NAME
-from pyaspeller import Word
-from dateutil import parser as dateutil_parser
-# import pypros
-# from pypros.ipros import IncomingRequest
-from mailru_im_async_bot import graphyte
-from mailru_im_async_bot.bot import Bot
-from mailru_im_async_bot.handler import MessageHandler, CommandHandler, DefaultHandler, BotButtonCommandHandler
+from config import bot, NAME
+from mailru_im_async_bot.handler import MessageHandler, CommandHandler
 from mailru_im_async_bot.filter import Filter
-from logging.config import fileConfig
+
+from db import save, load
+from handler import message_cb, list_cb
 from signal import signal, SIGUSR1
 from mailru_im_async_bot.util import do_rollover_log
 from pid import PidFile
-import configparser
 import asyncio
 import logging
-import sys
-import os
 
-from handler import message_cb
 
 log = logging.getLogger(__name__)
 
 # register signal for rotate log
-
-
 signal(SIGUSR1, do_rollover_log)
-
 
 loop = asyncio.get_event_loop()
 
 
 # Register your handlers here
 # ---------------------------------------------------------------------
-bot.dispatcher.add_handler(MessageHandler(callback=message_cb))
+bot.dispatcher.add_handler(MessageHandler(callback=message_cb, filters=~Filter.regexp("^/")))
+bot.dispatcher.add_handler(CommandHandler(callback=list_cb, command='list'))
 # ---------------------------------------------------------------------
 
 
@@ -65,10 +51,12 @@ with PidFile(NAME):
     server = None
     try:
         loop.run_until_complete(bot.init())
+        load()
         role_change('None', 'main')
         # server = loop.run_until_complete(pypros.listen(config['main']['host'], int(config['main']['port']), process))
         loop.run_forever()
     finally:
+        save()
         if server:
             server.close()
         # loop.run_until_complete(pypros.ipros.shutdown())
