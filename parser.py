@@ -2,6 +2,8 @@ import logging
 import pendulum
 import dateparser
 from dateutil import parser as dateutil_parser
+
+from config import BOT_UIN
 from helper import default_tz, markup_dusi_request, speller
 
 log = logging.getLogger(__name__)
@@ -100,6 +102,7 @@ def parse_by_tokens(tokens, min=5):
 
 
 async def parse(text):
+    text = text.replace(BOT_UIN, "")
     log.debug(f"{parse.__name__}: {locals()}")
     # парсим через внешнюю api с исправлением опечаток через yandex
     dt, parsed_text = await parse_by_markup_dusi(speller(text))

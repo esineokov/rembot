@@ -1,5 +1,5 @@
 box.cfg{
-    listen=3301,
+    listen=3310,
     log_level=7,
     log='/tmp/tnt_rembot.log'
 }

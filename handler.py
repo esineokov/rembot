@@ -31,7 +31,9 @@ async def message_cb(bot, event):
     dt, text = await parse(event.data["text"])
     if not dt:
         log.debug("match not found")
-        await bot.send_text(chat_id=event.data["chat"]["chatId"], text=Const.sorry)
+        await bot.send_text(
+            chat_id=event.data["chat"]["chatId"], text=Const.sorry_short
+        )
     elif dt < pendulum.now():
         log.debug("match time less then now")
         await bot.send_text(chat_id=event.data["chat"]["chatId"], text=Const.less_time)
@@ -58,14 +60,23 @@ async def message_cb(bot, event):
 
 
 async def forward_cb(bot, event, user):
-    if is_group(event) and not exists_mention(event):
-        return
+    if is_group(event):
+        if not exists_mention(event):
+            return
+        else:
+            event.data["text"] = event.data["text"].replace(BOT_UIN, "")
 
     await bot.send_text(chat_id=event.data["chat"]["chatId"], text=Const.when)
     response = await user.wait_response()
     dt, text = await parse(response.data["text"])
+    if not dt:
+        await bot.send_text(chat_id=event.data["chat"]["chatId"], text=Const.sorry_long)
+
+    if dt < pendulum.now():
+        await bot.send_text(chat_id=event.data["chat"]["chatId"], text=Const.less_time)
+        dt = False
+
     while not dt:
-        await bot.send_text(chat_id=event.data["chat"]["chatId"], text=Const.sorry)
         response = await user.wait_response()
         dt, text = await parse(response.data["text"])
 
@@ -74,6 +85,10 @@ async def forward_cb(bot, event, user):
                 chat_id=event.data["chat"]["chatId"], text=Const.less_time
             )
             dt = False
+        if not dt:
+            await bot.send_text(
+                chat_id=event.data["chat"]["chatId"], text=Const.sorry_long
+            )
 
     user_id = event.data["from"]["userId"]
     chat_id = event.data["chat"]["chatId"]
@@ -90,8 +105,11 @@ async def forward_cb(bot, event, user):
 
 
 async def list_cb(bot, event):
-    if is_group(event) and not exists_mention(event):
-        return
+    if is_group(event):
+        if not exists_mention(event):
+            return
+        else:
+            event.data["text"] = event.data["text"].replace(BOT_UIN, "")
 
     # TODO: табуляция для красоты
     user_notes = sorted(
@@ -138,7 +156,7 @@ async def button_change_cb(bot, event, user):
             dt, text = await parse(response.data["text"])
             while not dt:
                 await bot.send_text(
-                    chat_id=event.data["chat"]["chatId"], text=Const.sorry
+                    chat_id=event.data["chat"]["chatId"], text=Const.sorry_long
                 )
                 response = await user.wait_response()
                 dt, text = await parse(response)
