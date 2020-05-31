@@ -34,6 +34,7 @@ NAME = "RemBot"
 VERSION = "0.0.1"
 HASH_ = None
 TOKEN = config.get("icq_bot", "token")
+OWNER = config.get("icq_bot", "owner")
 BOT_UIN = TOKEN.split(":")[-1]
 POLL_TIMEOUT_S = int(config.get("icq_bot", "poll_time_s"))
 REQUEST_TIMEOUT_S = int(config.get("icq_bot", "request_timeout_s"))

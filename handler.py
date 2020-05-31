@@ -1,181 +1,254 @@
 import asyncio
-import functools
-import json
-from collections import namedtuple
-
-from dateutil import parser as dateutil_parser
-import aiohttp
+import logging
 import pendulum
-from pyaspeller import Word
-from config import REQUEST_TIMEOUT_S, bot, BOT_UIN
+from config import BOT_UIN
 from const import Const
-
-users = {}
-UserAlarm = namedtuple('UserAlarm', ['dt', 'msg_id', 'short_text', 'task_id'])
+from db import db_notes
+from helper import (
+    is_group,
+    exists_mention,
+    set_alarm,
+    human_time,
+    machine_time,
+    default_tz,
+    get_granted_users,
+    change_del_schema,
+)
+from parser import parse
 
 loop = asyncio.get_event_loop()
 
-
-def get_offset(timezone='Europe/Moscow'):
-    return int(pendulum.now(timezone).offset_hours*60*-1)
-
-
-async def markup_dusi_request(text):
-    async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_S),
-            headers={'User-agent': bot.user_agent}
-    ) as session:
-        async with session.get(
-                url="http://markup.dusi.mobi/api/text", ssl=False,
-                params={
-                    "text": text,
-                    "offset": get_offset()
-                }
-        ) as response:
-            return json.loads(await response.text())
-
-
-def get_datetime_by_dateutil(text):
-    try:
-        return dateutil_parser.parse(text)
-    except:
-        return False
-
-
-def get_datetime_by_pendulum(text, tz='Europe/Moscow'):
-    try:
-        return pendulum.parse(text, tz=tz, strict=False)
-    except:
-        return False
-
-
-async def parse_by_markup_dusi(text):
-    dtf = {}
-    parsed_text = None
-    try:
-        objects = await markup_dusi_request(text)
-
-        for token in objects['tokens']:
-            if token['type'] in ("Time", "Date"):
-                dtf[token['type']] = token['formatted']
-            if token['type'] == "Text":
-                parsed_text = token['value']
-        dt = f"{dtf.get('Date', '')}{'T' if dtf.get('Date') else ''}{dtf.get('Time', '')}"
-        return pendulum.parse(dt, tz='Europe/Moscow', strict=False), parsed_text
-    except:
-        return False, parsed_text
-
-
-async def parser(text):
-    for f in [get_datetime_by_dateutil, get_datetime_by_pendulum]:
-        dt = f(text)
-        if dt:
-            return dt, None
-
-    dt, parsed_text = await parse_by_markup_dusi(text)
-    if dt:
-        return dt, parsed_text
-
-    dt, parsed_text = await parse_by_markup_dusi(speller(text))
-    if dt:
-        return dt, parsed_text
-
-    return False, None
-
-
-def is_group(event):
-    return '@chat.agent' in event.data['chat']['chatId']
-
-
-def exists_mention(event):
-    return 'parts' in event.data \
-           and [p for p in event.data['parts'] if p['type'] == 'mention'
-                and p['payload']['userId'] == BOT_UIN]
-
-
-def speller(text):
-    correct = text
-    try:
-        for word in set(text.split(" ")):
-            check = Word(word)
-            if not check.correct and check.spellsafe:
-                correct = text.replace(word, check.spellsafe)
-    except:
-        pass
-    finally:
-        return correct
-
-
-def short_text(text, length=50):
-    text = text.replace("\n", "")
-    return text[:length]
-
-
-async def alarm(chat_id, msg_id):
-    await bot.send_text(
-        chat_id=chat_id, reply_msg_id=msg_id, text=Const.alarm.format(chat_id)
-    )
-    users[chat_id].remove([ua for ua in users[chat_id] if ua.msg_id == msg_id].pop())
-
-
-def set_alarm(dt, chat_id, msg_id, short_text):
-    if chat_id not in users:
-        users[chat_id] = []
-
-    task_id = loop.call_later(
-        (dt - pendulum.now()).seconds,
-        functools.partial(loop.create_task, alarm(chat_id, msg_id))
-    )
-    users[chat_id].append(UserAlarm(dt, msg_id, short_text, task_id))
-
-
-def human_time(dt):
-    date = dt.format('D.MM.Y')
-    time = dt.format('HH:mm') if dt.second == 0 else dt.format('HH:mm:ss')
-
-    if dt.is_same_day(pendulum.now()):
-        date = "cегодня"
-    else:
-        now = pendulum.now()
-        if dt.year == now.year and dt.month == now.month and (dt.day - now.day) == 1:
-            date = "завтра"
-    return f"{date} в {time}"
-
-
-def machine_time(dt):
-    date = dt.format('D.MM.Y')
-    time = dt.format('HH:mm') if dt.second == 0 else dt.format('HH:mm:ss')
-    return f"{date} {time}"
+log = logging.getLogger(__name__)
 
 
 async def message_cb(bot, event):
-    if is_group(event) and exists_mention(event):
+    if is_group(event):
+        if not exists_mention(event):
+            return
+        else:
+            event.data["text"] = event.data["text"].replace(BOT_UIN, "")
+
+    dt, text = await parse(event.data["text"])
+    if not dt:
+        log.debug("match not found")
+        await bot.send_text(chat_id=event.data["chat"]["chatId"], text=Const.sorry)
+    elif dt < pendulum.now():
+        log.debug("match time less then now")
+        await bot.send_text(chat_id=event.data["chat"]["chatId"], text=Const.less_time)
+    else:
+        log.debug(f"match found: {dt}")
+        mentions = [
+            p["payload"]["userId"]
+            for p in event.data.get("parts", [])
+            if p["type"] == "mention" and p["payload"]["userId"] != BOT_UIN
+        ]
+
+        user_id = event.data["from"]["userId"] if not mentions else mentions[0]
+        chat_id = event.data["chat"]["chatId"]
+        msg_id = event.data["msgId"]
+
+        set_alarm(user_id, chat_id, msg_id, dt)
+
+        await bot.send_text(
+            chat_id=event.data["chat"]["chatId"],
+            text=f"{Const.remind_at.format(human_time(dt))}",
+            reply_msg_id=msg_id,
+            inline_keyboard_markup=change_del_schema(user_id, chat_id, msg_id),
+        )
+
+
+async def forward_cb(bot, event, user):
+    if is_group(event) and not exists_mention(event):
         return
 
-    dt, text = await parser(event.data['text'])
-    if not dt:
-        await bot.send_text(chat_id=event.data['chat']['chatId'], text=Const.sorry)
-    elif dt < pendulum.now():
-        await bot.send_text(chat_id=event.data['chat']['chatId'], text=Const.less_time)
-    else:
-        set_alarm(
-            dt=dt, chat_id=event.data['chat']['chatId'],
-            msg_id=event.data['msgId'], short_text=short_text(event.data['text'] if text is None else text)
-        )
-        await bot.send_text(
-            chat_id=event.data['chat']['chatId'],
-            text=f"{Const.remind_at.format(human_time(dt))}"
-        )
+    await bot.send_text(chat_id=event.data["chat"]["chatId"], text=Const.when)
+    response = await user.wait_response()
+    dt, text = await parse(response.data["text"])
+    while not dt:
+        await bot.send_text(chat_id=event.data["chat"]["chatId"], text=Const.sorry)
+        response = await user.wait_response()
+        dt, text = await parse(response.data["text"])
+
+        if dt < pendulum.now():
+            await bot.send_text(
+                chat_id=event.data["chat"]["chatId"], text=Const.less_time
+            )
+            dt = False
+
+    user_id = event.data["from"]["userId"]
+    chat_id = event.data["chat"]["chatId"]
+    msg_id = event.data["msgId"]
+
+    set_alarm(user_id, chat_id, msg_id, dt)
+
+    await bot.send_text(
+        chat_id=event.data["chat"]["chatId"],
+        text=f"{Const.remind_at.format(human_time(dt))}",
+        reply_msg_id=msg_id,
+        inline_keyboard_markup=change_del_schema(user_id, chat_id, msg_id),
+    )
 
 
 async def list_cb(bot, event):
-    user_alarms = users.get(event.data['chat']['chatId'], [])
-    if not user_alarms:
+    if is_group(event) and not exists_mention(event):
+        return
+
+    # TODO: табуляция для красоты
+    user_notes = sorted(
+        db_notes.select_by_chat_id(event.data["chat"]["chatId"]),
+        key=lambda x: x["timestamp"],
+    )
+    if not user_notes:
+        await bot.send_text(chat_id=event.data["chat"]["chatId"], text=Const.empty)
+
+    for note in user_notes:
         await bot.send_text(
-            chat_id=event.data['chat']['chatId'], text=Const.empty
+            chat_id=event.data["chat"]["chatId"],
+            text=machine_time(pendulum.from_timestamp(note["timestamp"], default_tz)),
+            reply_msg_id=note["msg_id"],
+            inline_keyboard_markup=change_del_schema(
+                note["user_id"], note["chat_id"], note["msg_id"]
+            ),
         )
+
+
+async def start_cb(bot, event):
+    if is_group(event) and not exists_mention(event):
+        return
+
+    await bot.send_text(chat_id=event.data["chat"]["chatId"], text=Const.start)
+
+
+async def button_change_cb(bot, event, user):
+    _, user_id, chat_id, msg_id = event.data["callbackData"].split("_")
+
+    granted_users = get_granted_users(event)
+
+    if (
+        event.data["from"]["userId"] in granted_users
+        and chat_id == event.data["message"]["chat"]["chatId"]
+    ):
+        if db_notes.select_by_uniq(user_id, chat_id, msg_id):
+            await bot.answer_callback_query(
+                query_id=event.data["queryId"], text="", show_alert=False
+            )
+            await bot.send_text(chat_id=chat_id, text=Const.when_change)
+
+            response = await user.wait_response()
+            dt, text = await parse(response.data["text"])
+            while not dt:
+                await bot.send_text(
+                    chat_id=event.data["chat"]["chatId"], text=Const.sorry
+                )
+                response = await user.wait_response()
+                dt, text = await parse(response)
+
+                if dt < pendulum.now():
+                    await bot.send_text(
+                        chat_id=event.data["chat"]["chatId"], text=Const.less_time
+                    )
+                    dt = False
+
+            set_alarm(user_id, chat_id, msg_id, dt)
+            await bot.send_text(
+                chat_id=chat_id,
+                text=f"{Const.remind_at.format(human_time(dt))}",
+                reply_msg_id=msg_id,
+                inline_keyboard_markup=change_del_schema(user_id, chat_id, msg_id),
+            )
+        else:
+            await bot.answer_callback_query(
+                query_id=event.data["queryId"],
+                text=Const.already_noticed,
+                show_alert=False,
+            )
     else:
-        await bot.send_text(
-            chat_id=event.data['chat']['chatId'],
-            text="\n".join([f"[{machine_time(ua.dt)}] {ua.short_text}" for ua in user_alarms])
+        await bot.answer_callback_query(
+            query_id=event.data["queryId"],
+            text=Const.permission_denied,
+            show_alert=False,
         )
+
+
+async def button_delete_cb(bot, event):
+    _, user_id, chat_id, msg_id = event.data["callbackData"].split("_")
+
+    granted_users = get_granted_users(event)
+
+    if (
+        event.data["from"]["userId"] in granted_users
+        and chat_id == event.data["message"]["chat"]["chatId"]
+    ):
+        if db_notes.delete(user_id, chat_id, msg_id):
+            await bot.delete_messages(
+                chat_id=event.data["message"]["chat"]["chatId"],
+                msg_id=event.data["message"]["msgId"],
+            )
+            await bot.answer_callback_query(
+                query_id=event.data["queryId"], text=Const.deleted, show_alert=False
+            )
+        else:
+            await bot.answer_callback_query(
+                query_id=event.data["queryId"],
+                text=Const.something_wrong,
+                show_alert=False,
+            )
+            # await bot.send_text(chat_id=chat_id, text=Const.deleted, reply_msg_id=msg_id)
+    else:
+        await bot.answer_callback_query(
+            query_id=event.data["queryId"],
+            text=Const.permission_denied,
+            show_alert=False,
+        )
+
+
+async def button_move_cb(bot, event):
+    _, user_id, chat_id, msg_id, offset_time, offset_type = event.data[
+        "callbackData"
+    ].split("_")
+    granted_users = get_granted_users(event)
+
+    await bot.answer_callback_query(
+        query_id=event.data["queryId"], text="", show_alert=False
+    )
+
+    if (
+        event.data["from"]["userId"] in granted_users
+        and chat_id == event.data["message"]["chat"]["chatId"]
+    ):
+        offset = {}
+        if offset_type == "m":
+            offset["minutes"] = int(offset_time)
+
+        if offset_type == "day":
+            offset["days"] = int(offset_time)
+
+        new_dt = pendulum.now().add(**offset)
+        set_alarm(user_id, chat_id, msg_id, new_dt)
+        await bot.send_text(
+            chat_id=chat_id,
+            text=f"{Const.remind_at.format(human_time(new_dt))}",
+            reply_msg_id=msg_id,
+            inline_keyboard_markup=change_del_schema(user_id, chat_id, msg_id),
+        )
+
+
+async def help_cb(bot, event):
+    if is_group(event) and not exists_mention(event):
+        return
+
+    await bot.send_text(chat_id=event.data["chat"]["chatId"], text=Const.help)
+
+
+async def example_cb(bot, event):
+    if is_group(event) and not exists_mention(event):
+        return
+
+    await bot.send_text(chat_id=event.data["chat"]["chatId"], text=Const.example)
+
+
+async def description_cb(bot, event):
+    if is_group(event) and not exists_mention(event):
+        return
+
+    await bot.send_text(chat_id=event.data["chat"]["chatId"], text=Const.description)
