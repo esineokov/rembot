@@ -151,21 +151,35 @@ async def button_change_cb(bot, event, user):
                 query_id=event.data["queryId"], text="", show_alert=False
             )
             await bot.send_text(chat_id=chat_id, text=Const.when_change)
-
             response = await user.wait_response()
             dt, text = await parse(response.data["text"])
-            while not dt:
+            if not dt:
                 await bot.send_text(
-                    chat_id=event.data["chat"]["chatId"], text=Const.sorry_long
+                    chat_id=event.data["message"]["chat"]["chatId"],
+                    text=Const.sorry_long,
                 )
+
+            if dt < pendulum.now():
+                await bot.send_text(
+                    chat_id=event.data["message"]["chat"]["chatId"],
+                    text=Const.less_time,
+                )
+                dt = False
+
+            while not dt:
                 response = await user.wait_response()
-                dt, text = await parse(response)
+                dt, text = await parse(response.data["text"])
 
                 if dt < pendulum.now():
                     await bot.send_text(
-                        chat_id=event.data["chat"]["chatId"], text=Const.less_time
+                        chat_id=event.data["message"]["chat"]["chatId"],
+                        text=Const.less_time,
                     )
                     dt = False
+                if not dt:
+                    await bot.send_text(
+                        chat_id=event.data["chat"]["chatId"], text=Const.sorry_long
+                    )
 
             set_alarm(user_id, chat_id, msg_id, dt)
             await bot.send_text(

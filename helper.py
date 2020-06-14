@@ -81,6 +81,9 @@ async def alarm(user_id, chat_id, msg_id):
 
 
 def set_alarm(user_id, chat_id, msg_id, dt):
+    log.debug(locals())
+    total_seconds = (dt - pendulum.now()).total_seconds()
+    log.debug(int(total_seconds))
     db_users.upsert(user_id, time_zone=default_tz)
     if "@chat.agent" in chat_id:
         db_chats.upsert(chat_id, time_zone=default_tz)
@@ -88,7 +91,7 @@ def set_alarm(user_id, chat_id, msg_id, dt):
     db_notes.upsert(user_id, chat_id, msg_id, dt.int_timestamp)
 
     loop.call_later(
-        (dt - pendulum.now()).seconds,
+        int(total_seconds),
         functools.partial(loop.create_task, alarm(user_id, chat_id, msg_id)),
     )
 
