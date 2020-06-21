@@ -21,13 +21,16 @@ for config in ["config.ini", "logging.ini"]:
 # Read config
 config = configparser.ConfigParser()
 config.read(os.path.join(configs_path, "config.ini"))
-logging.config.fileConfig(os.path.join(configs_path, "logging.ini"), disable_existing_loggers=False)
+logging.config.fileConfig(
+    os.path.join(configs_path, "logging.ini"), disable_existing_loggers=False
+)
 
 
 # init graphite sender
-if config.getboolean('graphite', 'enable'):
+if config.getboolean("graphite", "enable"):
     graphyte.init(
-        config.get("graphite", "server"), prefix=f"{config.get('graphite', 'prefix')}.{config.get('main', 'alias')}"
+        config.get("graphite", "server"),
+        prefix=f"{config.get('graphite', 'prefix')}.{config.get('main', 'alias')}",
     )
 
 NAME = "RemBot"
@@ -40,8 +43,17 @@ POLL_TIMEOUT_S = int(config.get("icq_bot", "poll_time_s"))
 REQUEST_TIMEOUT_S = int(config.get("icq_bot", "request_timeout_s"))
 TASK_TIMEOUT_S = int(config.get("icq_bot", "task_timeout_s"))
 TASK_MAX_LEN = int(config.get("icq_bot", "task_max_len"))
+BOT_API_HOST = config.get("icq_bot", "host")
+
+PID_NAME = config.get("main", "pid")
 
 bot = Bot(
-    token=TOKEN, version=VERSION, name=NAME, poll_time_s=POLL_TIMEOUT_S, request_timeout_s=REQUEST_TIMEOUT_S,
-    task_max_len=TASK_MAX_LEN, task_timeout_s=TASK_TIMEOUT_S
+    token=TOKEN,
+    version=VERSION,
+    name=NAME,
+    poll_time_s=POLL_TIMEOUT_S,
+    request_timeout_s=REQUEST_TIMEOUT_S,
+    task_max_len=TASK_MAX_LEN,
+    task_timeout_s=TASK_TIMEOUT_S,
+    api_url_base=BOT_API_HOST,
 )

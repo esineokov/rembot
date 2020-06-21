@@ -102,7 +102,7 @@ def parse_by_tokens(tokens, min=5):
 
 
 async def parse(text):
-    text = text.replace(BOT_UIN, "")
+    text = text.replace(BOT_UIN, "").replace("\n", " ")
     log.debug(f"{parse.__name__}: {locals()}")
     # парсим через внешнюю api с исправлением опечаток через yandex
     dt, parsed_text = await parse_by_markup_dusi(speller(text))

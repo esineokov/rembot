@@ -1,4 +1,4 @@
-from config import bot, NAME, OWNER
+from config import bot, NAME, OWNER, PID_NAME
 from mailru_im_async_bot.handler import (
     MessageHandler,
     CommandHandler,
@@ -101,7 +101,7 @@ def role_change(current, new):
 #     rq.reply(200, 'ok')
 
 
-with PidFile(NAME):
+with PidFile(PID_NAME):
     # pypros.ctlr.G_git_hash = HASH_ if HASH_ else VERSION
     # pypros.ctlr.role_changed_cb = lambda current, new: role_change(current, new)
     # pypros.ctlr.IncomingHandlers.CHECK = lambda cn, p: cn.reply(p, 200, 'ok')
