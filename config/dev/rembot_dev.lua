@@ -1,7 +1,7 @@
 box.cfg{
-    listen=3310,
+    listen=3312,
     log_level=7,
-    log='/tmp/tnt_rembot_icq.log'
+    log='/tmp/tnt_rembot_dev.log'
 }
 
 box.schema.user.grant('guest', 'read,write,execute,drop', 'universe', nil, {if_not_exists=true})

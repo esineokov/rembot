@@ -47,6 +47,8 @@ BOT_API_HOST = config.get("icq_bot", "host")
 
 PID_NAME = config.get("main", "pid")
 
+COORDINATE_LINK_PATTERN = r"(?<=^https://www\.google\.com/maps/search\/\?api=1&query=)\d+\.\d+,\d+\.\d+(?=$)"
+
 bot = Bot(
     token=TOKEN,
     version=VERSION,

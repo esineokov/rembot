@@ -1,7 +1,11 @@
 import asyncio
 import logging
+import re
+
 import pendulum
-from config import BOT_UIN
+from timezonefinder import TimezoneFinder
+
+from config import BOT_UIN, COORDINATE_LINK_PATTERN
 from const import Const
 from db import db_notes
 from helper import (
@@ -19,6 +23,19 @@ from parser import parse
 loop = asyncio.get_event_loop()
 
 log = logging.getLogger(__name__)
+
+
+async def coordinate_cb(bot, event):
+    if is_group(event):
+        if not exists_mention(event):
+            return
+        else:
+            event.data["text"] = event.data["text"].replace(BOT_UIN, "")
+
+    tf = TimezoneFinder()
+    latitude, longitude = re.match(COORDINATE_LINK_PATTERN, event.data["text"]).group(0).split(",")
+    tz = tf.timezone_at(lng=longitude, lat=latitude)
+    await bot.send_text(chat_id=event.data["chat"]["chatId"], text=tz)
 
 
 async def message_cb(bot, event):

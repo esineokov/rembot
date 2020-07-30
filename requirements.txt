@@ -4,3 +4,4 @@ pendulum
 pyaspeller
 tarantool
 dateparser
+timezonefinder

@@ -1,4 +1,4 @@
-from config import bot, NAME, OWNER, PID_NAME
+from config import bot, NAME, OWNER, PID_NAME, COORDINATE_LINK_PATTERN
 from mailru_im_async_bot.handler import (
     MessageHandler,
     CommandHandler,
@@ -18,7 +18,7 @@ from handler import (
     button_change_cb,
     button_move_cb,
     example_cb,
-    description_cb,
+    description_cb, coordinate_cb,
 )
 from signal import signal, SIGUSR1
 from mailru_im_async_bot.util import do_rollover_log
@@ -37,6 +37,9 @@ log = logging.getLogger(__name__)
 
 # Register your handlers here
 # ---------------------------------------------------------------------
+# coordinate call back
+ccb = MessageHandler(callback=coordinate_cb, filters=Filter.regexp(COORDINATE_LINK_PATTERN))
+
 mhfcb = MessageHandler(
     callback=forward_cb, filters=~Filter.regexp("^/") & Filter.forward, multiline=True
 )
@@ -51,11 +54,12 @@ cbcb = BotButtonCommandHandler(
 mhmcb = MessageHandler(
     callback=message_cb,
     filters=~Filter.regexp("^/") & ~Filter.forward,
-    ignore=[mhfcb, cbcb],
+    ignore=[mhfcb, cbcb, coordinate_cb],
 )
 bot.dispatcher.add_handler(mhfcb)
 bot.dispatcher.add_handler(mhmcb)
 bot.dispatcher.add_handler(cbcb)
+bot.dispatcher.add_handler(ccb)
 bot.dispatcher.add_handler(CommandHandler(callback=list_cb, command="list"))
 bot.dispatcher.add_handler(CommandHandler(callback=start_cb, command="start"))
 bot.dispatcher.add_handler(CommandHandler(callback=help_cb, command="help"))
@@ -81,6 +85,7 @@ bot.dispatcher.add_handler(
         callback=button_move_cb, filters=Filter.callback_data_regexp("^move")
     )
 )
+
 # ---------------------------------------------------------------------
 
 
